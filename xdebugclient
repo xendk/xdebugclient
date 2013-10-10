@@ -51,7 +51,6 @@ class XDebugClient {
             if ($this->socket->selectRead(0)) {
                 $packet = $this->socket->read(4096);
                 if ($packet != '') {
-                    print_r($packet);
                     $res = $this->parseResponse($packet);
                     $this->handleResponse($res);
                     $this->prompt();
