@@ -45,7 +45,7 @@ class XDebugClient {
             $this->current_file = $res['fileuri'];
         }
         $this->puts("Connected.");
-        $this->socket->setBlocking(true);
+        $this->socket->setBlocking(false);
         $this->prompt();
 
         $exit = false;
