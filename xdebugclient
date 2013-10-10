@@ -64,7 +64,8 @@ class XDebugClient {
     function parseResponse($packet) {
         // Every packet starts with a lenght of the following XML data.
         if (!preg_match('/^([0-9]+)(.*)$/s', $packet, $matches)) {
-            $this->puts("Malformed servre packet.");
+            $this->puts("Malformed server packet:");
+            $this->puts($packet);
             $this->quit(1);
         }
         // No PHP XML parsers seems to like XDebugs <?xml version="1.0"
