@@ -32,9 +32,12 @@ class XDebugClient {
         do {
             if ($this->socket->selectRead(0)) {
                 $packet = $this->socket->read(4096);
-                $res = $this->parseResponse($packet);
-                $this->handleResponse($res);
-                $this->prompt();
+                if ($packet != '') {
+                    print_r($packet);
+                    $res = $this->parseResponse($packet);
+                    $this->handleResponse($res);
+                    $this->prompt();
+                }
             }
             if (($input = $this->input()) or $input_buffer) {
                 if ($input) {
