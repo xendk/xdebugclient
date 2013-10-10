@@ -1,0 +1,5 @@
+{
+  "require": {
+    "clue/socket-raw": "dev-master"
+  }
+}

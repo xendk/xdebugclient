@@ -1,0 +1,140 @@
+#!/usr/bin/php
+<?php
+
+require 'vendor/autoload.php';
+
+use Socket\Raw\Factory;
+
+class XDebugClient {
+    protected $socket;
+    protected $transaction_id = 1;
+    
+    function __construct($uri) {
+    }
+
+    function run() {
+        $factory = new Factory();
+
+        $server = $factory->createServer("tcp://0.0.0.0:9000");
+
+        $this->puts("Waiting for connection...");
+        $this->socket = $server->accept();
+        $this->socket->selectRead(60);
+        $packet = $this->socket->read(4096);
+        $res = $this->parseResponse($packet);
+        print_r($res);
+        $this->puts("Connected.");
+        $this->socket->setBlocking(true);
+        $this->prompt();
+
+        $exit = false;
+        $input_buffer = "";
+        do {
+            if ($this->socket->selectRead(0)) {
+                $packet = $this->socket->read(4096);
+                $res = $this->parseResponse($packet);
+                $this->handleResponse($res);
+                $this->prompt();
+            }
+            if (($input = $this->input()) or $input_buffer) {
+                if ($input) {
+                    $input_buffer .= $input;
+                }
+                $t = explode("\n", $input_buffer, 2);
+                if (sizeof($t) > 1) {
+                    list($cmd, $rest) = $t;
+                    $input_buffer = $rest;
+                    if (preg_match('/^q(uit)?/', $cmd)) {
+                        $this->puts("Exiting.");
+                        $this->quit();
+                    }
+                    if ($cmd) {
+                        // Add in a transaction id.
+                        $cmd = explode(' ', $cmd);
+                        $cmd[0] .= ' -i ' . ($this->transaction_id++);
+                        $this->socket->write(implode(' ', $cmd) . "\0");
+                    }
+                }
+            }
+            // Sleep for tenth a second.
+            usleep(100000);
+        } while (!$exit);
+    }
+
+    function parseResponse($packet) {
+        // Every packet starts with a lenght of the following XML data.
+        if (!preg_match('/^([0-9]+)(.*)$/s', $packet, $matches)) {
+            $this->puts("Malformed servre packet.");
+            $this->quit(1);
+        }
+        // No PHP XML parsers seems to like XDebugs <?xml version="1.0"
+        // encoding="iso-8859-1"? > header, oddly enough. So we strip it.
+        $xml = $matches[2];
+        $lines = explode("\n", $matches[2]);
+        array_shift($lines);
+        $xml = implode("\n", $lines);
+        $res = new SimpleXMLElement($xml);
+        return $res;
+    }
+
+    function input() {
+        $read = array(STDIN);
+        $write = array();
+        $except = array();
+        $result = stream_select($read, $write, $except, 0);
+        if ($result === false) {
+            $this->puts("Error using select on STDIN.");
+            $this->quit(1);
+        };
+        if ($result === 0) {
+            return false;
+        }
+        return stream_get_line(STDIN, 1);
+    }
+
+    function handleResponse($res) {
+        $root_element = $res->getName();
+        if ($root_element == 'stream') {
+            $this->puts("Got some data. Implement this.");
+        }
+        elseif ($root_element == 'response') {
+            if ($res->error) {
+                $this->puts('Error: ' . $res->error->message);
+            }
+            else {
+                switch ($res['command']) {
+                case 'status':
+                    $this->puts('Status: ' . $res['status']);
+                    break;
+                default:
+                    $this->puts('Unknown command "' . $res['command']. '"');
+                    $this->puts((string) $res->asXml());
+                }
+            }
+        }
+        else {
+            $this->puts('Malformed response.');
+            $this->puts((string) $res);
+            $this->quit(1);
+        }
+
+        // Add an empty line.
+        $this->puts();
+    }
+
+    function quit($code = 0) {
+        $this->socket->close();
+        exit($code);
+    }
+
+    function puts($string = '') {
+        echo $string . "\n";
+    }
+
+    function prompt() {
+        echo "> ";
+    }
+}
+
+$client = new XDebugClient("tcp://0.0.0.0:9000");
+$client->run();
