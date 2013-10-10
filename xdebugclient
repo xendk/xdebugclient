@@ -146,7 +146,7 @@ class XDebugClient {
                     $this->puts('Status: ' . $res['status']);
                     break;
                 default:
-                    $this->puts('Unknown command "' . $res['command']. '"');
+                    $this->puts('Unknown respomse type "' . $res['command']. '"');
                     $this->puts((string) $res->asXml());
                 }
             }
