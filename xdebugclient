@@ -22,7 +22,25 @@ class XDebugClient {
         $this->socket->selectRead(60);
         $packet = $this->socket->read(4096);
         $res = $this->parseResponse($packet);
-        print_r($res);
+        if ($res['protocol_version'] != '1.0') {
+            $this->echo('Unsupported protocol version.');
+            $this->exit();
+        }
+        if ($res->engine) {
+            $this->puts('> ' . (string) $res->engine . ' (' . $res->engine['version'] . ')');
+        }
+        if ($res->url) {
+            $this->puts('> ' . (string) $res->url);
+        }
+        if ($res->author) {
+            $this->puts('> by ' . (string) $res->author);
+        }
+        if ($res->copyright) {
+            $this->puts('> ' . (string) $res->copyright);
+        }
+        if ($res['fileuri']) {
+            $this->current_file = $res['fileuri'];
+        }
         $this->puts("Connected.");
         $this->socket->setBlocking(true);
         $this->prompt();
