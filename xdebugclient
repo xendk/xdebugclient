@@ -8,6 +8,9 @@ use Socket\Raw\Factory;
 class XDebugClient {
     protected $socket;
     protected $transaction_id = 1;
+    protected $status = 'starting';
+    protected $current_file = '';
+    protected $current_line = '';
     
     function __construct($uri) {
     }
@@ -123,6 +126,21 @@ class XDebugClient {
                 $this->puts('Error: ' . $res->error->message);
             }
             else {
+                // Get elements from the XDebug namespace.
+                $xdebug = $res->children('http://xdebug.org/dbgp/xdebug');
+                if ($xdebug->message) {
+                    // Get the attributes without a namespace.
+                    $message = $xdebug->message->attributes('');
+                    if ($message['status']) {
+                        $this->status = $message['status'];
+                    }
+                    if ($message['filename']) {
+                        $this->current_file = $message['filename'];
+                    }
+                    if ($message['lineno']) {
+                        $this->current_line = $message['lineno'];
+                    }
+                }
                 switch ($res['command']) {
                 case 'status':
                     $this->puts('Status: ' . $res['status']);
@@ -153,7 +171,14 @@ class XDebugClient {
     }
 
     function prompt() {
-        echo "> ";
+        $prompt = '';
+        if ($this->current_file) {
+            $prompt = $this->current_file;
+        }
+        if ($this->current_line) {
+            $prompt .= ':' . $this->current_line;
+        }
+        echo $prompt . "> ";
     }
 }
 
