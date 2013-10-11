@@ -1,10 +1,6 @@
 #!/usr/bin/php
 <?php
 
-require 'vendor/autoload.php';
-
-use Socket\Raw\Factory;
-
 class XDebugClient {
     protected $socket;
     protected $transaction_id = 1;
@@ -16,14 +12,13 @@ class XDebugClient {
     }
 
     function run() {
-        $factory = new Factory();
-
-        $server = $factory->createServer("tcp://0.0.0.0:9000");
+        // @todo error handling.
+        $server = stream_socket_server("tcp://0.0.0.0:9000", $errno, $errstr);
 
         $this->puts("Waiting for connection...");
-        $this->socket = $server->accept();
-        $this->socket->selectRead(60);
-        $packet = $this->socket->read(4096);
+        $this->socket = stream_socket_accept($server);
+        // $this->socket->selectRead(60);
+        $packet = fread($this->socket, 4096);
         $res = $this->parseResponse($packet);
         if ($res['protocol_version'] != '1.0') {
             $this->echo('Unsupported protocol version.');
@@ -45,21 +40,35 @@ class XDebugClient {
             $this->current_file = $res['fileuri'];
         }
         $this->puts("Connected.");
-        $this->socket->setBlocking(false);
+
+        // We have no further need for the server socket.
+        fclose($server);
+
+        stream_set_blocking(STDIN, 0);
+        stream_set_blocking($this->socket, 0);
         $this->prompt();
 
         $exit = false;
         $input_buffer = "";
         do {
-            if ($this->socket->selectRead(0)) {
-                $packet = $this->socket->read(4096);
+            $read = array(STDIN, $this->socket);
+            $write = array();
+            $except = array();
+            $result = stream_select($read, $write, $except, null);
+            if ($result === false) {
+                $this->puts("Error using select.");
+                $this->quit(1);
+            };
+
+            if (in_array($this->socket, $read)) {
+                $packet = fread($this->socket, 4096);
                 if ($packet != '') {
                     $res = $this->parseResponse($packet);
                     $this->handleResponse($res);
                     $this->prompt();
                 }
             }
-            if (($input = $this->input()) or $input_buffer) {
+            if (($input = stream_get_line(STDIN, 1)) or $input_buffer) {
                 if ($input) {
                     $input_buffer .= $input;
                 }
@@ -75,12 +84,10 @@ class XDebugClient {
                         // Add in a transaction id.
                         $cmd = explode(' ', $cmd);
                         $cmd[0] .= ' -i ' . ($this->transaction_id++);
-                        $this->socket->write(implode(' ', $cmd) . "\0");
+                        fwrite($this->socket, implode(' ', $cmd) . "\0");
                     }
                 }
             }
-            // Sleep for tenth a second.
-            usleep(100000);
         } while (!$exit);
     }
 
@@ -99,21 +106,6 @@ class XDebugClient {
         $xml = implode("\n", $lines);
         $res = new SimpleXMLElement($xml);
         return $res;
-    }
-
-    function input() {
-        $read = array(STDIN);
-        $write = array();
-        $except = array();
-        $result = stream_select($read, $write, $except, 0);
-        if ($result === false) {
-            $this->puts("Error using select on STDIN.");
-            $this->quit(1);
-        };
-        if ($result === 0) {
-            return false;
-        }
-        return stream_get_line(STDIN, 1);
     }
 
     function handleResponse($res) {
@@ -162,7 +154,7 @@ class XDebugClient {
     }
 
     function quit($code = 0) {
-        $this->socket->close();
+        fclose($this->socket);
         exit($code);
     }
 
