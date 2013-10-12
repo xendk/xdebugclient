@@ -77,6 +77,7 @@ class XDebugClient {
                     list($cmd, $rest) = $t;
                     $input_buffer = $rest;
                     if (preg_match('/^q(uit)?/', $cmd)) {
+                        fwrite($this->socket, 'detach' . "\0");
                         $this->puts("Exiting.");
                         $this->quit();
                     }
