@@ -80,12 +80,11 @@ class XDebugClient {
                         $this->puts("Exiting.");
                         $this->quit();
                     }
-                    if ($cmd) {
-                        // Add in a transaction id.
-                        $cmd = explode(' ', $cmd);
-                        $cmd[0] .= ' -i ' . ($this->transaction_id++);
-                        fwrite($this->socket, implode(' ', $cmd) . "\0");
-                    }
+                    $cmd = $this->handleShortCommands($cmd);
+                    // Add in a transaction id.
+                    $cmd = explode(' ', $cmd);
+                    $cmd[0] .= ' -i ' . ($this->transaction_id++);
+                    fwrite($this->socket, implode(' ', $cmd) . "\0");
                 }
             }
         } while (!$exit);
@@ -106,6 +105,29 @@ class XDebugClient {
         $xml = implode("\n", $lines);
         $res = new SimpleXMLElement($xml);
         return $res;
+    }
+
+    function handleShortCommands($cmd) {
+        // Empty line, or ones just containing whitespace is
+        // interpreted as step_into.
+        if (trim($cmd) == "") {
+            return "step_into";
+        }
+        if (preg_match('/^([snf])( .*)?$/', $cmd, $matches)) {
+            switch ($matches[1]) {
+            case 's':
+                $cmd = 'step_into';
+                break;
+            case 'n':
+                $cmd = 'step_over';
+                break;
+            case 'f':
+                $cmd = 'step_out';
+                break;
+            }
+            return $cmd . (isset($matches[2]) ? $matches[2] : '');
+        }
+        return $cmd;
     }
 
     function handleResponse($res) {
@@ -136,6 +158,11 @@ class XDebugClient {
                 switch ($res['command']) {
                 case 'status':
                     $this->puts('Status: ' . $res['status']);
+                    break;
+                case 'step_into':
+                case 'step_over':
+                case 'step_out':
+                    // No output, it's kinda obvious.
                     break;
                 default:
                     $this->puts('Unknown respomse type "' . $res['command']. '"');
