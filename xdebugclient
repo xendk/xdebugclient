@@ -57,7 +57,8 @@ class XDebugClient {
         $this->prompt();
 
         $exit = false;
-        $input_buffer = "";
+        $socket_buffer = '';
+        $input_buffer = '';
         do {
             $read = array(STDIN, $this->socket);
             $write = array();
@@ -68,14 +69,20 @@ class XDebugClient {
                 $this->quit(1);
             };
 
+            // Add anything read on the socket to the buffer.
             if (in_array($this->socket, $read)) {
-                $packet = fread($this->socket, 4096);
-                if ($packet != '') {
+                $socket_buffer = fread($this->socket, 4096);
+                while (preg_match('/^(.*?\0.*?)\0(.*)$/s', $socket_buffer, $matches)) {
+                    $packet = $matches[1];
+                    $socket_buffer = $matches[2];
                     $res = $this->parseResponse($packet);
-                    $this->handleResponse($res);
-                    $this->prompt();
+                    if ($res) {
+                        $this->handleResponse($res);
+                    }
                 }
+                $this->prompt();
             }
+
             if (($input = stream_get_line(STDIN, 1)) or $input_buffer) {
                 if ($input) {
                     $input_buffer .= $input;
@@ -101,7 +108,7 @@ class XDebugClient {
 
     function parseResponse($packet) {
         // Every packet starts with a lenght of the following XML data.
-        if (!preg_match('/^([0-9]+)(.*)$/s', $packet, $matches)) {
+        if (!preg_match('/^([0-9]+)\0(.*)$/s', $packet, $matches)) {
             $this->puts("Malformed server packet:");
             $this->puts($packet);
             $this->quit(1);
