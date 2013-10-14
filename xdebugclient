@@ -22,10 +22,15 @@ class XDebugClient {
         $this->socket = stream_socket_accept($server);
         // $this->socket->selectRead(60);
         $packet = fread($this->socket, 4096);
-        $res = $this->parseResponse($packet);
+        // Strip null byte an verify.
+        $res = $this->parseResponse(substr($packet, 0, -1));
+        if (!$res) {
+            $this->puts('Error parsing init packet, exiting.');
+            $this->exit(1);
+        }
         if ($res['protocol_version'] != '1.0') {
             $this->echo('Unsupported protocol version.');
-            $this->exit();
+            $this->exit(1);
         }
         if ($res->engine) {
             $this->puts('> ' . (string) $res->engine . ' (' . $res->engine['version'] . ')');
