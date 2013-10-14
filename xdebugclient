@@ -113,6 +113,12 @@ class XDebugClient {
             $this->puts($packet);
             $this->quit(1);
         }
+        // Double safetycheck.
+        if (strlen($matches[2]) != $matches[1]) {
+            $this->puts("Malformed server packet, wrong length:");
+            $this->puts($packet);
+            $this->quit(1);
+        }
         // No PHP XML parsers seems to like XDebugs <?xml version="1.0"
         // encoding="iso-8859-1"? > header, oddly enough. So we strip it.
         $xml = $matches[2];
