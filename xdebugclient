@@ -12,6 +12,9 @@ class XDebugClient {
     }
 
     function run() {
+        // We'll handle XML errors ourselves, to avoid it spewing
+        // warnings all over the place.
+        libxml_use_internal_errors(true);
         // @todo error handling.
         $server = stream_socket_server("tcp://0.0.0.0:9000", $errno, $errstr);
 
@@ -104,7 +107,21 @@ class XDebugClient {
         $lines = explode("\n", $matches[2]);
         array_shift($lines);
         $xml = implode("\n", $lines);
-        $res = new SimpleXMLElement($xml);
+        try {
+            $res = new SimpleXMLElement($xml);
+        }
+        catch (Exception $e) {
+            $this->puts('Exception: ' . $e->getMessage());
+            $res = null;
+        }
+        if ($errors = libxml_get_errors()) {
+            $this->puts('Errors parsing XML response.');
+            foreach ($errors as $error) {
+                $this->puts(print_r($error, true));
+            }
+            $this->puts("Raw XML data:");
+            $this->puts($xml);
+        }
         return $res;
     }
 
