@@ -7,8 +7,14 @@ class XDebugClient {
     protected $status = 'starting';
     protected $current_file = '';
     protected $current_line = '';
+
+    /**
+     * Info passed between command parser and response parser.
+     */
+    protected $transaction_info;
     
     function __construct($uri) {
+        $this->uri = $uri;
     }
 
     function run() {
@@ -16,7 +22,7 @@ class XDebugClient {
         // warnings all over the place.
         libxml_use_internal_errors(true);
         // @todo error handling.
-        $server = stream_socket_server("tcp://0.0.0.0:9000", $errno, $errstr);
+        $server = stream_socket_server($this->uri, $errno, $errstr);
 
         $this->puts("Waiting for connection...");
         $this->socket = stream_socket_accept($server);
@@ -96,11 +102,8 @@ class XDebugClient {
                         $this->puts("Exiting.");
                         $this->quit();
                     }
-                    $cmd = $this->handleShortCommands($cmd);
-                    // Add in a transaction id.
-                    $cmd = explode(' ', $cmd);
-                    $cmd[0] .= ' -i ' . ($this->transaction_id++);
-                    fwrite($this->socket, implode(' ', $cmd) . "\0");
+                    $cmd = $this->handleCommands($cmd);
+                    fwrite($this->socket, $cmd . "\0");
                 }
             }
         } while (!$exit);
@@ -143,13 +146,14 @@ class XDebugClient {
         return $res;
     }
 
-    function handleShortCommands($cmd) {
+    function handleCommands($cmd) {
         // Empty line, or ones just containing whitespace is
         // interpreted as step_into.
         if (trim($cmd) == "") {
-            return "step_into";
+            $cmd = "step_into";
         }
-        if (preg_match('/^([snf])( .*)?$/', $cmd, $matches)) {
+        elseif (preg_match('/^([snf])( .*)?$/', $cmd, $matches)) {
+            // One character aliases.
             switch ($matches[1]) {
             case 's':
                 $cmd = 'step_into';
@@ -161,17 +165,55 @@ class XDebugClient {
                 $cmd = 'step_out';
                 break;
             }
-            return $cmd . (isset($matches[2]) ? $matches[2] : '');
+            $cmd = $cmd . (isset($matches[2]) ? $matches[2] : '');
         }
+
+        // Extract command name.
+        $parts = explode(' ', $cmd);
+
+        switch ($parts[0]) {
+        case 'break':
+            $error = false;
+            if (sizeof($parts) != 2) {
+                $error = true;
+            }
+            else {
+                $file_parts = explode(':', $parts[1]);
+                if (sizeof($parts) != 2) {
+                    $error = true;
+                }
+            }
+            if ($error) {
+                $this->puts("Synax error.");
+                $this->puts("Usage: break <filename>:<linenumber>");
+                return null;
+            } else {
+                $cmd = 'breakpoint_set -t line -f file://' . $file_parts[0] . ' -n ' . $file_parts[1];
+                $this->transaction_info[$this->transaction_id] = array(
+                    'type' => 'line',
+                    'file' => $file_parts[0],
+                    'line' => $file_parts[1],
+                );
+            }
+            break;
+        }
+        // Add in a transaction id.
+        $cmd .= ' -i ' . ($this->transaction_id++);
+
         return $cmd;
     }
 
     function handleResponse($res) {
         $root_element = $res->getName();
+        $transaction_info = null;
         if ($root_element == 'stream') {
             $this->puts("Got some data. Implement this.");
         }
         elseif ($root_element == 'response') {
+            if ($res['transaction_id'] and isset($this->transaction_info[(string) $res['transaction_id']])) {
+                $transaction_info = $this->transaction_info[(string) $res['transaction_id']];
+                unset($this->transaction_info[(string) $res['transaction_id']]);
+            }
             if ($res->error) {
                 $this->puts('Error: ' . $res->error->message);
             }
@@ -199,6 +241,11 @@ class XDebugClient {
                 case 'step_over':
                 case 'step_out':
                     // No output, it's kinda obvious.
+                    break;
+                case 'breakpoint_set':
+                    if ($transaction_info and $transaction_info['type'] == 'line') {
+                        $this->puts('Breakpoint set at line ' . $transaction_info['line'] . ' in ' . $transaction_info['file']);
+                    }
                     break;
                 default:
                     $this->puts('Unknown respomse type "' . $res['command']. '"');
