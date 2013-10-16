@@ -262,14 +262,14 @@ class XDebugClient {
                 return false;
             }
             else {
+                if ($res['status']) {
+                    $this->status = $res['status'];
+                }
                 // Get elements from the XDebug namespace.
                 $xdebug = $res->children('http://xdebug.org/dbgp/xdebug');
                 if ($xdebug->message) {
                     // Get the attributes without a namespace.
                     $message = $xdebug->message->attributes('');
-                    if ($message['status']) {
-                        $this->status = $message['status'];
-                    }
                     if ($message['filename']) {
                         $this->current_file = $message['filename'];
                     }
