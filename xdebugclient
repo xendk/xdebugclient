@@ -118,6 +118,13 @@ class XDebugClient {
                         // Non-error response.
                         $result = $res;
                     }
+                    else {
+                        // Errors doesn't have a transaction id, so we
+                        // can't tell exactly which command failed. So
+                        // we have to assume it was the one we just
+                        // sent.
+                        $done = true;
+                    }
                 }
             }
             if (!$done) {
