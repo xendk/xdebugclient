@@ -128,7 +128,17 @@ class XDebugClient {
                 }
             }
             if (!$done) {
-                $this->socket_buffer .= fread($this->socket, 4096);
+                $to_read = 4096;
+                if (preg_match('/^(.*?)\0/s', $this->socket_buffer, $matches)) {
+                    // If we already read the start of the packet, we
+                    // can calculate how much to read.
+                    $xml_size = $matches[1];
+                    // Total size is the size of the XML payload, the
+                    // number and two null bytes.
+                    $total_read = $xml_size + strlen($xml_size) + 2;
+                    $to_read = $total_read - strlen($this->socket_buffer);
+                }
+                $this->socket_buffer .= fread($this->socket, $to_read);
             }
         }
 
