@@ -188,7 +188,7 @@ class XDebugClient {
         if (trim($cmd) == "") {
             $cmd = "step_into";
         }
-        elseif (preg_match('/^([rsnf])( .*)?$/', $cmd, $matches)) {
+        elseif (preg_match('/^([rsnfp])( .*)?$/', $cmd, $matches)) {
             // One character aliases.
             switch ($matches[1]) {
             case 's':
@@ -202,6 +202,9 @@ class XDebugClient {
                 break;
             case 'r':
                 $cmd = 'run';
+                break;
+            case 'p':
+                $cmd = 'print';
                 break;
             }
             $cmd = $cmd . (isset($matches[2]) ? $matches[2] : '');
@@ -263,9 +266,29 @@ class XDebugClient {
                 }
             }
             break;
-        default:
-            $this->puts("Unknown command, sending verbatim.");
-            $res = $this->sendCommand($cmd);
+        case 'print':
+            if (sizeof($parts) == 1) {
+                $contexts = $this->sendCommand('context_names');
+                foreach ($contexts->context as $context) {
+                    $this->puts($context['name']);
+                    $vars = $this->sendCommand('context_get -c ' . $context['id']);
+                    foreach ($vars as $property) {
+                        $this->puts('  ' . $property['fullname'] . ' ' . $this->printProperty($property));
+                    }
+                }
+            }
+            else {
+                // Relying on the undocumented fact that XDebug isn't
+                // picky about the proper context being passed.
+                array_shift($parts);
+                array_unshift($parts, '-n');
+                array_unshift($parts, 'property_get');
+                $res = $this->sendCommand(implode(' ', $parts));
+                if ($res) {
+                    $this->puts($this->printProperty($res->property[0], true));
+                }
+            }
+            break;
         case '!':
             array_shift($parts);
             $res = $this->sendCommand(implode(' ', $parts));
@@ -313,6 +336,80 @@ class XDebugClient {
             $this->puts((string) $res);
         }
         return true;
+    }
+
+    function printProperty($prop, $full = false) {
+        $meta = '';
+        if ($prop['facet']) {
+            $meta = $prop['facet'] . ' ';
+        }
+
+        switch ($prop['type']) {
+        case 'uninitialized':
+            $dump = '<uninitialized>';
+            break;
+        case 'bool':
+            $dump = (string) $prop ? 'TRUE' : 'FALSE';
+            break;
+        case 'string':
+            $dump = '"' . base64_decode((string) $prop) . '"';
+            break;
+        case 'int':
+            $dump = (string) $prop;
+            break;
+        case 'float':
+            $dump = (string) $prop;
+            break;
+        case 'array':
+            $i = 0;
+            $items = array();
+            foreach ($prop->property as $property) {
+                if ($full) {
+                    $items[] = $property['name'] . ' => ' . $this->printProperty($property);
+                }
+                else {
+                    if ($i > 2) {
+                        $items[] = '...';
+                        break;
+                    }
+                    $items[] = $property['name'];
+                    $i++;
+                }
+            }
+            if ($full) {
+                $dump = "array(\n  " . implode(",\n  ", $items). "\n)";
+            }
+            else {
+                $dump = 'array( ' . implode(', ', $items). ' )';
+            }
+            break;
+        case 'object':
+            $items = array();
+            if ($full) {
+            foreach ($prop->property as $property) {
+                if ($full) {
+                    $items[] = $property['name'] . ': ' . $this->printProperty($property);
+                }
+                else {
+                    if ($i > 2) {
+                        $items[] = '...';
+                        break;
+                    }
+                    $items[] = $property['name'];
+                    $i++;
+                }
+            }
+                $dump = $prop['classname'] . "(\n  " . implode(",\n  ", $items). "\n)";
+            }
+            else {
+                $dump = 'object: ' . $prop['classname'];
+            }
+            break;
+        default:
+            $dump = 'Unknown data type. Update printProperty.';
+            break;
+        }
+        return $meta . ($full ? "\n" : '') . $dump;
     }
 
     function quit($code = 0) {
