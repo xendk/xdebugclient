@@ -234,6 +234,12 @@ class XDebugClient {
                 }
             }
             break;
+        default:
+            $this->puts("Unknown command, sending verbatim.");
+            $res = $this->sendCommand($cmd);
+            $this->puts("XML response:");
+            $this->puts((string) $res->asXml());
+
         }
     }
 
