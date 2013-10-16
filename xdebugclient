@@ -178,7 +178,7 @@ class XDebugClient {
         if (trim($cmd) == "") {
             $cmd = "step_into";
         }
-        elseif (preg_match('/^([snf])( .*)?$/', $cmd, $matches)) {
+        elseif (preg_match('/^([rsnf])( .*)?$/', $cmd, $matches)) {
             // One character aliases.
             switch ($matches[1]) {
             case 's':
@@ -190,6 +190,9 @@ class XDebugClient {
             case 'f':
                 $cmd = 'step_out';
                 break;
+            case 'r':
+                $cmd = 'run';
+                break;
             }
             $cmd = $cmd . (isset($matches[2]) ? $matches[2] : '');
         }
@@ -198,9 +201,18 @@ class XDebugClient {
         $parts = explode(' ', $cmd);
 
         switch ($parts[0]) {
-        case 'step_into':
         case 'step_over':
         case 'step_out':
+            if ($this->status != 'break') {
+                $this->puts($parts[0] . ' only valid in break state.');
+                break;
+            }
+        case 'run':
+        case 'step_into':
+            if ($this->status != 'break' and $this->status != 'starting') {
+                $this->puts($parts[0] . ' only valid in break and starting state.');
+                break;
+            }
             $res = $this->sendCommand($cmd);
             if (!$res['reason'] == 'ok') {
                 $this->puts('Unknown error happended.');
