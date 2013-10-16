@@ -7,12 +7,8 @@ class XDebugClient {
     protected $status = 'starting';
     protected $current_file = '';
     protected $current_line = '';
+    protected $socket_buffer = '';
 
-    /**
-     * Info passed between command parser and response parser.
-     */
-    protected $transaction_info;
-    
     function __construct($uri) {
         $this->uri = $uri;
     }
@@ -35,7 +31,7 @@ class XDebugClient {
             $this->exit(1);
         }
         if ($res['protocol_version'] != '1.0') {
-            $this->echo('Unsupported protocol version.');
+            $this->puts('Unsupported protocol version.');
             $this->exit(1);
         }
         if ($res->engine) {
@@ -59,37 +55,28 @@ class XDebugClient {
         fclose($server);
 
         stream_set_blocking(STDIN, 0);
-        stream_set_blocking($this->socket, 0);
-        $this->prompt();
 
         $exit = false;
         $socket_buffer = '';
         $input_buffer = '';
         do {
-            $read = array(STDIN, $this->socket);
+            $read = array(STDIN);
             $write = array();
             $except = array();
-            $result = stream_select($read, $write, $except, null);
+            // Check if there's already data ready to read.
+            $result = stream_select($read, $write, $except, 0);
             if ($result === false) {
                 $this->puts("Error using select.");
                 $this->quit(1);
-            };
-
-            // Add anything read on the socket to the buffer.
-            if (in_array($this->socket, $read)) {
-                $socket_buffer = fread($this->socket, 4096);
-                while (preg_match('/^(.*?\0.*?)\0(.*)$/s', $socket_buffer, $matches)) {
-                    $packet = $matches[1];
-                    $socket_buffer = $matches[2];
-                    $res = $this->parseResponse($packet);
-                    if ($res) {
-                        $this->handleResponse($res);
-                    }
-                }
+            }
+            elseif ($result === 0) {
                 $this->prompt();
+                // Wait until there's something to read.
+                $read = array(STDIN);
+                $result = stream_select($read, $write, $except, null);
             }
 
-            if (($input = stream_get_line(STDIN, 1)) or $input_buffer) {
+            if (($input = fread(STDIN, 4096)) or $input_buffer) {
                 if ($input) {
                     $input_buffer .= $input;
                 }
@@ -102,11 +89,43 @@ class XDebugClient {
                         $this->puts("Exiting.");
                         $this->quit();
                     }
-                    $cmd = $this->handleCommands($cmd);
-                    fwrite($this->socket, $cmd . "\0");
+                    $this->handleCommand($cmd);
                 }
             }
         } while (!$exit);
+    }
+
+    function sendCommand($cmd) {
+        $txn_id = ($this->transaction_id++);
+        // Add in a transaction id.
+        $cmd .= ' -i ' . $txn_id;
+        fwrite($this->socket, $cmd . "\0");
+
+        $done = FALSE;
+        while (!$done) {
+            while (preg_match('/^(.*?\0.*?)\0(.*)$/s', $this->socket_buffer, $matches)) {
+                $packet = $matches[1];
+                $this->socket_buffer = $matches[2];
+                $res = $this->parseResponse($packet);
+                $result = null;
+                if ($res) {
+                    if ($res['transaction_id'] and $res['transaction_id'] == $txn_id) {
+                        // @todo some handling of resposes with
+                        //   another transaction id.
+                        $done = true;
+                    }
+                    if ($this->commonResposeHandling($res)) {
+                        // Non-error response.
+                        $result = $res;
+                    }
+                }
+            }
+            if (!$done) {
+                $this->socket_buffer .= fread($this->socket, 4096);
+            }
+        }
+
+        return $result;
     }
 
     function parseResponse($packet) {
@@ -146,7 +165,7 @@ class XDebugClient {
         return $res;
     }
 
-    function handleCommands($cmd) {
+    function handleCommand($cmd) {
         // Empty line, or ones just containing whitespace is
         // interpreted as step_into.
         if (trim($cmd) == "") {
@@ -172,6 +191,23 @@ class XDebugClient {
         $parts = explode(' ', $cmd);
 
         switch ($parts[0]) {
+        case 'step_into':
+        case 'step_over':
+        case 'step_out':
+            $res = $this->sendCommand($cmd);
+            if (!$res['reason'] == 'ok') {
+                $this->puts('Unknown error happended.');
+            }
+            break;
+        case 'status':
+            $res = $this->sendCommand($cmd);
+            if (!$res['reason'] == 'ok') {
+                $this->puts('Unknown error happended.');
+            }
+            else {
+                $this->puts('Status: ' . $res['status']);
+            }
+            break;
         case 'break':
             $error = false;
             if (sizeof($parts) != 2) {
@@ -184,38 +220,33 @@ class XDebugClient {
                 }
             }
             if ($error) {
-                $this->puts("Synax error.");
+                $this->puts("Syntax error.");
                 $this->puts("Usage: break <filename>:<linenumber>");
                 return null;
             } else {
                 $cmd = 'breakpoint_set -t line -f file://' . $file_parts[0] . ' -n ' . $file_parts[1];
-                $this->transaction_info[$this->transaction_id] = array(
-                    'type' => 'line',
-                    'file' => $file_parts[0],
-                    'line' => $file_parts[1],
-                );
+                $res = $this->sendCommand($cmd);
+                if ($res['id']) {
+                    $this->puts('Breakpoint set at line ' . $file_parts[1] . ' in ' . $file_parts[0]);
+                }
+                else {
+                    $this->puts('Unknown error setting breakpoint.');
+                }
             }
             break;
         }
-        // Add in a transaction id.
-        $cmd .= ' -i ' . ($this->transaction_id++);
-
-        return $cmd;
     }
 
-    function handleResponse($res) {
+    function commonResposeHandling($res) {
         $root_element = $res->getName();
         $transaction_info = null;
         if ($root_element == 'stream') {
             $this->puts("Got some data. Implement this.");
         }
         elseif ($root_element == 'response') {
-            if ($res['transaction_id'] and isset($this->transaction_info[(string) $res['transaction_id']])) {
-                $transaction_info = $this->transaction_info[(string) $res['transaction_id']];
-                unset($this->transaction_info[(string) $res['transaction_id']]);
-            }
             if ($res->error) {
                 $this->puts('Error: ' . $res->error->message);
+                return false;
             }
             else {
                 // Get elements from the XDebug namespace.
@@ -233,34 +264,13 @@ class XDebugClient {
                         $this->current_line = $message['lineno'];
                     }
                 }
-                switch ($res['command']) {
-                case 'status':
-                    $this->puts('Status: ' . $res['status']);
-                    break;
-                case 'step_into':
-                case 'step_over':
-                case 'step_out':
-                    // No output, it's kinda obvious.
-                    break;
-                case 'breakpoint_set':
-                    if ($transaction_info and $transaction_info['type'] == 'line') {
-                        $this->puts('Breakpoint set at line ' . $transaction_info['line'] . ' in ' . $transaction_info['file']);
-                    }
-                    break;
-                default:
-                    $this->puts('Unknown respomse type "' . $res['command']. '"');
-                    $this->puts((string) $res->asXml());
-                }
             }
         }
         else {
             $this->puts('Malformed response.');
             $this->puts((string) $res);
-            $this->quit(1);
         }
-
-        // Add an empty line.
-        $this->puts();
+        return true;
     }
 
     function quit($code = 0) {
