@@ -9,6 +9,11 @@ class XDebugClient {
     protected $current_line = '';
     protected $socket_buffer = '';
 
+    /**
+     * List of set Breakpoint.
+     */
+    protected $breakpoints = array();
+
     function __construct($uri) {
         $this->uri = $uri;
     }
@@ -259,7 +264,9 @@ class XDebugClient {
                 $cmd = 'breakpoint_set -t line -f file://' . $file_parts[0] . ' -n ' . $file_parts[1];
                 $res = $this->sendCommand($cmd);
                 if ($res['id']) {
-                    $this->puts('Breakpoint set at line ' . $file_parts[1] . ' in ' . $file_parts[0]);
+                    $this->breakpoints[] = $res['id'];
+                    $num = sizeof($this->breakpoints);
+                    $this->puts('Breakpoint ' . $num . ' set at line ' . $file_parts[1] . ' in ' . $file_parts[0]);
                 }
                 else {
                     $this->puts('Unknown error setting breakpoint.');
