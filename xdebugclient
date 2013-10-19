@@ -101,6 +101,9 @@ class XDebugClient {
     }
 
     function sendCommand($cmd) {
+        if (is_array($cmd)) {
+            $cmd = implode(' ', $cmd);
+        }
         $txn_id = ($this->transaction_id++);
         // Add in a transaction id.
         $cmd .= ' -i ' . $txn_id;
@@ -193,30 +196,19 @@ class XDebugClient {
         if (trim($cmd) == "") {
             $cmd = "step_into";
         }
-        elseif (preg_match('/^([rsnfp])( .*)?$/', $cmd, $matches)) {
-            // One character aliases.
-            switch ($matches[1]) {
-            case 's':
-                $cmd = 'step_into';
-                break;
-            case 'n':
-                $cmd = 'step_over';
-                break;
-            case 'f':
-                $cmd = 'step_out';
-                break;
-            case 'r':
-                $cmd = 'run';
-                break;
-            case 'p':
-                $cmd = 'print';
-                break;
-            }
-            $cmd = $cmd . (isset($matches[2]) ? $matches[2] : '');
-        }
 
+        $aliases = array(
+            's' => 'step_into',
+            'n' => 'step_over',
+            'f' => 'step_out',
+            'r' => 'run',
+            'p' => 'print',
+        );
         // Extract command name.
         $parts = explode(' ', $cmd);
+        if (isset($aliases[$parts[0]])) {
+            $parts[0] = $aliases[$parts[0]];
+        }
 
         switch ($parts[0]) {
         case 'step_over':
@@ -231,13 +223,13 @@ class XDebugClient {
                 $this->puts($parts[0] . ' only valid in break and starting state.');
                 break;
             }
-            $res = $this->sendCommand($cmd);
+            $res = $this->sendCommand($parts);
             if (!$res['reason'] == 'ok') {
                 $this->puts('Unknown error happended.');
             }
             break;
         case 'status':
-            $res = $this->sendCommand($cmd);
+            $res = $this->sendCommand($parts);
             if (!$res['reason'] == 'ok') {
                 $this->puts('Unknown error happended.');
             }
