@@ -203,6 +203,7 @@ class XDebugClient {
             'f' => 'step_out',
             'r' => 'run',
             'p' => 'print',
+            'bt' => 'backtrace',
         );
         // Extract command name.
         $parts = explode(' ', $cmd);
@@ -285,6 +286,17 @@ class XDebugClient {
                 $res = $this->sendCommand(implode(' ', $parts));
                 if ($res) {
                     $this->puts($this->printProperty($res->property[0], true));
+                }
+            }
+            break;
+        case 'backtrace':
+            $stack = $this->sendCommand('stack_get');
+            foreach ($stack as $frame) {
+                if ($frame['type'] == 'file') {
+                    $this->puts($frame['where'] . ' ' . preg_replace('{^file://}', '', $frame['filename']) . ':' . $frame['lineno']);
+                }
+                elseif ($frame['type'] == 'eval') {
+                    $this->puts('eval line ' . $frame['lineno']);
                 }
             }
             break;
