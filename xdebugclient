@@ -211,6 +211,9 @@ class XDebugClient {
             $parts[0] = $aliases[$parts[0]];
         }
 
+        // @todo this switch could be replaced by a much more sexy
+        //   command definition-plugin system, however, it works for
+        //   now.
         switch ($parts[0]) {
         case 'step_over':
             if ($this->status != 'break') {
