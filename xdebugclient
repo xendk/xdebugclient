@@ -215,7 +215,7 @@ class XDebugClient {
 
         $valid_states = array(
             'step_over' => array('break'),
-            'run' => array('break', 'stating'),
+            'run' => array('break', 'starting'),
             'step_into' => array('break', 'stating'),
             'step_out' => array('break', 'starting', 'stopping'),
         );
