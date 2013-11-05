@@ -213,7 +213,6 @@ class XDebugClient {
 
         switch ($parts[0]) {
         case 'step_over':
-        case 'step_out':
             if ($this->status != 'break') {
                 $this->puts($parts[0] . ' only valid in break state.');
                 break;
@@ -224,6 +223,12 @@ class XDebugClient {
                 $this->puts($parts[0] . ' only valid in break and starting state.');
                 break;
             }
+        case 'step_out':
+            if ($this->status != 'break' and $this->status != 'starting' and $this->status != 'stopping') {
+                $this->puts($parts[0] . ' only valid in break,  starting and stopping state.');
+                break;
+            }
+            // @todo rewrite the above cases to something more generic.
             $res = $this->sendCommand($parts);
             if (!$res['reason'] == 'ok') {
                 $this->puts('Unknown error happended.');
