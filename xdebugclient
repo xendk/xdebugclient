@@ -55,6 +55,7 @@ class XDebugClient {
             $this->current_file = $res['fileuri'];
         }
         $this->puts("Connected.");
+        $this->puts("Type 'help' for command list.");
 
         // We have no further need for the server socket.
         fclose($server);
@@ -204,6 +205,7 @@ class XDebugClient {
             'r' => 'run',
             'p' => 'print',
             'bt' => 'backtrace',
+            '?' => 'help',
         );
         // Extract command name.
         $parts = explode(' ', $cmd);
@@ -222,10 +224,10 @@ class XDebugClient {
         //   command definition-plugin system, however, it works for
         //   now.
         switch ($parts[0]) {
-        case 'step_over':
-        case 'run':
         case 'step_into':
+        case 'step_over':
         case 'step_out':
+        case 'run':
             // Check state.
             if (!in_array($this->status, $valid_states[$parts[0]])) {
                 $this->puts($parts[0] . ' only valid in states: ' . implode(', ', $valid_states[$parts[0]]) . '.');
@@ -313,6 +315,25 @@ class XDebugClient {
             if ($res) {
                 $this->puts("XML response:");
                 $this->puts((string) $res->asXml());
+            }
+            break;
+        case '?, help':
+            $commands = array(
+                's, step_into' => 'Step into next instruction.',
+                'n, step_over' => 'Step over the next instruction.',
+                'f, step_out' => 'Run until out of the current function.',
+                'r, run' => 'Run to next breakpoint or end of code.',
+                'status' => 'Show current state.',
+                'break <file>:<line number>' => 'Set breakpoint.',
+                'p, print [variable]' => 'Show variables and variable values. ',
+                'bt, backtrace' => 'Show backtrace.',
+                '! <command>' => 'Raw XDebug command.',
+                '?, help' => 'This help.',
+            );
+            foreach ($commands as $command => $desc) {
+                $this->puts($command . ':');
+                $this->puts(' ' . $desc);
+                $this->puts();
             }
             break;
         default:
