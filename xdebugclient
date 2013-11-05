@@ -211,27 +211,26 @@ class XDebugClient {
             $parts[0] = $aliases[$parts[0]];
         }
 
+        $valid_states = array(
+            'step_over' => array('break'),
+            'run' => array('break', 'stating'),
+            'step_into' => array('break', 'stating'),
+            'step_out' => array('break', 'starting', 'stopping'),
+        );
+
         // @todo this switch could be replaced by a much more sexy
         //   command definition-plugin system, however, it works for
         //   now.
         switch ($parts[0]) {
         case 'step_over':
-            if ($this->status != 'break') {
-                $this->puts($parts[0] . ' only valid in break state.');
-                break;
-            }
         case 'run':
         case 'step_into':
-            if ($this->status != 'break' and $this->status != 'starting') {
-                $this->puts($parts[0] . ' only valid in break and starting state.');
-                break;
-            }
         case 'step_out':
-            if ($this->status != 'break' and $this->status != 'starting' and $this->status != 'stopping') {
-                $this->puts($parts[0] . ' only valid in break,  starting and stopping state.');
+            // Check state.
+            if (!in_array($this->status, $valid_states[$parts[0]])) {
+                $this->puts($parts[0] . ' only valid in states: ' . implode(', ', $valid_states[$parts[0]]) . '.');
                 break;
             }
-            // @todo rewrite the above cases to something more generic.
             $res = $this->sendCommand($parts);
             if (!$res['reason'] == 'ok') {
                 $this->puts('Unknown error happended.');
